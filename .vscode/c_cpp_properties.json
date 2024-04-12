@@ -1,0 +1,31 @@
+{
+    "configurations": [
+        {
+            "browse": {
+                "databaseFilename": "${default}",
+                "limitSymbolsToIncludedHeaders": false
+            },
+            "includePath": [
+                "${workspaceFoler}/**",
+                "${workspaceFolder}/install/custom_interfaces/include/custom_interfaces",
+                "/opt/ros/humble/include/**",
+                "/home/daeyun/Desktop/github_repos/SIFM/**",
+                "/home/daeyun/Desktop/github_repos/SIFM/src/tcp_pkg/include",
+                "/home/daeyun/Desktop/github_repos/SIFM/install/custom_interfaces/**",
+                "/home/daeyun/Desktop/github_repos/SIFM/src/custom_interfaces/msg",
+                "/home/daeyun/Desktop/github_repos/SIFM/src/custom_interfaces/srv",
+                "/usr/lib/python3/dist-packages/PyQt5",
+                "/home/daeyun/Desktop/github_repos/SIFM/src/tcp_pkg",
+                "/home/daeyun/Desktop/github_repos/SIFM/src/tcp_pkg/include",
+                "/home/daeyun/Desktop/github_repos/SIFM/src/surgical_robot_control/include",
+                "/usr/include",
+            ],
+            "name": "ROS",
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu17",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}
