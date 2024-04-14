@@ -26,6 +26,8 @@ from rcl_interfaces.msg import SetParametersResult
 
 from std_msgs.msg import Header
 from geometry_msgs.msg import Vector3
+from std_msgs.msg import Float64MultiArray, MultiArrayLayout, MultiArrayDimension
+# from rviz_visual_tools import RvizVisualTools
 
 import queue
 queue = queue.Queue()
@@ -50,7 +52,12 @@ class RealTimePlot3D:
         self.ani = FuncAnimation(self.fig, self.update_data, frames=1, interval=100)
         self.scatter = self.ax.scatter(g_hand_data[:, 0], g_hand_data[:, 1], g_hand_data[:, 2])
         self.update_thread = threading.Thread(target=self.update_data)
-        self.update_thread.daemon = True
+        # self.update_thread.daemon = True
+        # self.update_thread.start()
+        self.start()
+        self.pltshow_thread = threading.Thread(target=self.show)
+        # self.pltshow_thread.daemon = True
+        # self.pltshow_thread.start()        
 
     def update_data(self, frames):
 
@@ -87,12 +94,13 @@ class RealTimePlot3D:
         # 데이터 업데이트 쓰레드 시작
         self.update_thread.start()
         self.ani = FuncAnimation(self.fig, self.update_data, frames=100, interval=30)
-
+    def show(self):
+        plt.show()
 
 class MediaPipeHandLandmarkDetectorNode(Node):
         # pass
     def __init__(self):
-        super.init()('handpose_node')
+        super().__init__('handpose_node')
         self.declare_parameter('qos_depth', 10)
         qos_depth = self.get_parameter('qos_depth').value
         
@@ -102,14 +110,23 @@ class MediaPipeHandLandmarkDetectorNode(Node):
             depth=qos_depth,
             durability=QoSDurabilityPolicy.VOLATILE
         )
-
+        
+        self.handlandmarks_publisher = self.create_publisher(
+            Float64MultiArray,
+            'mediapipe_hand_landmarks',
+            QOS_RKL10V
+        )
+        
         self.handpose_publisher = self.create_publisher(
             Vector3,
             'camera_to_hand_vector',
             QOS_RKL10V
         )
+        # self.rviz_visual_tools = RvizVisualTools('base_link', 'visualization_marker')
         
-        self.xyz_world = {'x':0, 'y':0, 'z':0}
+        self.camera_to_hand_vector = {'x':0, 'y':0, 'z':0}
+        
+        self.mediapipe_hand_detection()
 
             
     def mediapipe_hand_detection(self):
@@ -190,7 +207,6 @@ class MediaPipeHandLandmarkDetectorNode(Node):
 
                 cv2.imshow('MediaPipe Hands', color_image)
                 cv2.imshow('MediaPipe Hands', depth_image)
-
                 ######################################################
                 # choose image with filter
                 depth_image = depth_image
@@ -214,7 +230,6 @@ class MediaPipeHandLandmarkDetectorNode(Node):
                 image.flags.writeable = True
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-
                 hand_label = None
                 # class of hands (detected)
                 if results.multi_handedness:
@@ -237,7 +252,21 @@ class MediaPipeHandLandmarkDetectorNode(Node):
                                 g_hand_data[ids, 0] = cx
                                 g_hand_data[ids, 1] = cy
                                 g_hand_data[ids, 2] = cz
-
+                                
+                            handlmrks_data_1d = g_hand_data.flatten().tolist()
+                            handlmrks_msg = Float64MultiArray()
+                            handlmrks_msg.layout.dim = [
+                                MultiArrayDimension(label='keypoint', size=21, stride=3),
+                                MultiArrayDimension(label='xyz', size=3, stride=1)
+                            ]
+                            handlmrks_msg.data = handlmrks_data_1d
+                            self.handlandmarks_publisher.publish(handlmrks_msg)
+                            
+                            # # NumPy 배열을 튜플의 목록으로 변환합니다.
+                            # handlmrks_data_tuple = [tuple(point) for point in g_hand_data]
+                            # # RViz에서 마커로 점을 나타냅니다.
+                            # self.rviz_visual_tools.publishPoints(handlmrks_data_tuple, rviz_visual_tools.RED, scale=0.05)
+                            
                             # 정규화
                             min_vals = np.min(g_hand_data, axis=0)
                             max_vals = np.max(g_hand_data, axis=0)
@@ -265,7 +294,6 @@ class MediaPipeHandLandmarkDetectorNode(Node):
                 else:
                     # print("No Right Hand")
                     pass
-
                 c_time = time.time()
                 fps = 1 / (c_time - p_time)
                 p_time = c_time
@@ -279,23 +307,23 @@ class MediaPipeHandLandmarkDetectorNode(Node):
                     # Applying filter
                     finger_depth_curr = depth_image[pixel_y, pixel_x]
                     filter_depth = filter_sensitivity*finger_depth_curr + (1-filter_sensitivity)*finger_depth_prev
-                    # xyz_world = rs.rs2_deproject_pixel_to_point(color_intrinsics, [pixel_x, pixel_y], filter_depth)
-                    xyz_world = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [pixel_x, pixel_y], filter_depth)
-                    self.xyz_world['x'] = xyz_world[0]
-                    self.xyz_world['y'] = xyz_world[1]
-                    self.xyz_world['z'] = xyz_world[2]
+                    # camera_to_hand_vector = rs.rs2_deproject_pixel_to_point(color_intrinsics, [pixel_x, pixel_y], filter_depth)
+                    camera_to_hand_vector = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [pixel_x, pixel_y], filter_depth)
+                    self.camera_to_hand_vector['x'] = camera_to_hand_vector[0]
+                    self.camera_to_hand_vector['y'] = camera_to_hand_vector[1]
+                    self.camera_to_hand_vector['z'] = camera_to_hand_vector[2]
                     self.publishall()
                     
                     finger_depth_prev = filter_depth
 
                     cv2.putText(image, f"{filter_depth:.1f} mm",
                                 (pixel_x, pixel_y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
-                    cv2.putText(image, f"{xyz_world[0]:.1f}, {xyz_world[1]:.1f}, {xyz_world[2]:.1f} mm",
+                    cv2.putText(image, f"{camera_to_hand_vector[0]:.1f}, {camera_to_hand_vector[1]:.1f}, {camera_to_hand_vector[2]:.1f} mm",
                                 (pixel_x, pixel_y+15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
                     cv2.line(depth_norm_image, (pixel_x, pixel_y), (pixel_x, pixel_y), (0, 255, 0), 5)
                     cv2.putText(depth_norm_image, f"{filter_depth:.1f} mm",
                                 (pixel_x, pixel_y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
-                    cv2.putText(depth_norm_image, f"{xyz_world[0]:.1f}, {xyz_world[1]:.1f}, {xyz_world[2]:.1f} mm",
+                    cv2.putText(depth_norm_image, f"{camera_to_hand_vector[0]:.1f}, {camera_to_hand_vector[1]:.1f}, {camera_to_hand_vector[2]:.1f} mm",
                                 (pixel_x, pixel_y+15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
 
 
@@ -305,23 +333,27 @@ class MediaPipeHandLandmarkDetectorNode(Node):
                 cv2.imshow('depth image', depth_norm_image)
                 if cv2.waitKey(5) & 0xFF == 27:
                     break
+                
+    def publish_point_cloud(self, points):
+        self.rviz_visual_tools.publishPoints(points, rviz_visual_tools.RED, scale=0.05)
+
     def publishall(self):
         msg = Vector3()
-        msg.x = self.xyz_world['x']
-        msg.y = self.xyz_world['y']
-        msg.z = self.xyz_world['z']
+        msg.x = self.camera_to_hand_vector['x']
+        msg.y = self.camera_to_hand_vector['y']
+        msg.z = self.camera_to_hand_vector['z']
         self.handpose_publisher.publish(msg)
                     
 
 def main(args=None):
     # 클래스 인스턴스 생성
-    real_time_plot = RealTimePlot3D()
-    thread_plot3d = threading.Thread(target=real_time_plot.start)
-    thread_plot3d.daemon = True
-    thread_plot3d.start()
-    print('show start')
-    plt.show()
-    print('show end')
+    # real_time_plot = RealTimePlot3D()
+    # thread_plot3d = threading.Thread(target=real_time_plot.start)
+    # thread_plot3d.daemon = True
+    # thread_plot3d.start()
+    # print('show start')
+    # plt.show()
+    # print('show end')
     
     rclpy.init(args=args)
     try:

@@ -13,7 +13,9 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob.glob(os.path.join('launch', '*launch.[pxy][yma]*')))
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools',
+                      'mediapipe',
+                      'pyrealsense2'],
     zip_safe=True,
     maintainer='daeyun',
     maintainer_email='bigyun9375@gmail.com',
@@ -22,7 +24,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'handpose_publisher = handpose_pkg.handpose_indexfinger_publisher:main'
+            'handpose_publisher = handpose_pkg.handpose_indexfinger_publisher:main',
+            'handpose_3d_animation = handpose_pkg.handpose3Dshow:main'
         ],
     },
 )
