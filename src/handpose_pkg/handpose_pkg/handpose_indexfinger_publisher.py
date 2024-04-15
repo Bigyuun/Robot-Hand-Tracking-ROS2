@@ -210,14 +210,16 @@ class MediaPipeHandLandmarkDetectorNode(Node):
                 ######################################################
                 # choose image with filter
                 depth_image = depth_image
+                depth_image = cv2.flip(depth_image, 1)
                 ######################################################
 
                 # depth_image_origin = cv2.flip(depth_image_origin, 1)
-                depth_image = cv2.flip(depth_image, 1)
 
                 # Flip the image horizontally for a later selfie-view display, and convert
                 # the BGR image to RGB.
-                image = cv2.cvtColor(cv2.flip(color_image, 1), cv2.COLOR_BGR2RGB)
+                image = color_image
+                image = cv2.flip(image, 1)
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 depth_norm_image = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.3), cv2.COLORMAP_JET)
 
 
@@ -293,7 +295,9 @@ class MediaPipeHandLandmarkDetectorNode(Node):
                                 g_hand_world_data[ids, 2] = cz
                 else:
                     # print("No Right Hand")
+                    
                     pass
+                
                 c_time = time.time()
                 fps = 1 / (c_time - p_time)
                 p_time = c_time
@@ -312,10 +316,18 @@ class MediaPipeHandLandmarkDetectorNode(Node):
                     self.camera_to_hand_vector['x'] = camera_to_hand_vector[0]
                     self.camera_to_hand_vector['y'] = camera_to_hand_vector[1]
                     self.camera_to_hand_vector['z'] = camera_to_hand_vector[2]
-                    self.publishall()
+                    
+                    if hand_label == "Right":
+                        self.publishall()
+                    else:
+                        msg = Vector3()
+                        msg.x = 0.0
+                        msg.y = 0.0
+                        msg.z = 300.0
+                        self.handpose_publisher.publish(msg)
                     
                     finger_depth_prev = filter_depth
-
+                    cv2.line(image, (int(image_width/2), int(image_height/2)), (int(image_width/2), int(image_height/2)), (255,0,0), 5)
                     cv2.putText(image, f"{filter_depth:.1f} mm",
                                 (pixel_x, pixel_y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
                     cv2.putText(image, f"{camera_to_hand_vector[0]:.1f}, {camera_to_hand_vector[1]:.1f}, {camera_to_hand_vector[2]:.1f} mm",
