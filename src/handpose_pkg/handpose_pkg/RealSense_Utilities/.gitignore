@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+*.asv
+test/
+options.txt
