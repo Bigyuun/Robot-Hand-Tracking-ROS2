@@ -18,8 +18,9 @@ import queue
 queue = queue.Queue()
 
 g_hand_data = np.zeros((21, 3))
+g_hand_data_scaled = np.zeros((21, 3))
+g_hand_data_normalized = np.zeros((21, 3))
 g_hand_world_data = np.zeros((21, 3))
-g_hand_world_data_normalized = np.zeros((21, 3))
 
 class RealTimePlot3D:
     def __init__(self, num_points=21):
@@ -41,7 +42,7 @@ class RealTimePlot3D:
 
     def update_data(self, frames):
 
-        global g_hand_data, g_hand_data_normalized
+        global g_hand_data, g_hand_world_data, g_hand_data_normalized
         colors = ['black', 'blue', 'green', 'orange', 'red', 'black']
         intervals = [4, 8, 12, 16, 20]
 
@@ -52,12 +53,19 @@ class RealTimePlot3D:
             self.ax.set_xlabel('X Label')
             self.ax.set_ylabel('Y Label')
             self.ax.set_zlabel('Z Label')
-            data = g_hand_data
+            self.ax.set_xlim(0, 500)
+            self.ax.set_ylim(0, 500)
+            self.ax.set_zlim(-100, 400)
+            # data = g_hand_data
+            data = g_hand_data_scaled
+            # data = g_hand_world_data
+            # data = g_hand_data_normalized
 
             self.scatter = self.ax.scatter(data[:, 0], data[:, 1], data[:, 2],
                                            color='black',
                                            s=50,
                                            alpha=1)
+            # self.scatter = self.ax.scatter(0,0,0, color='red',s=50, alpha=1)
             for i in range(len(intervals)):
                 start_idx = 0 if i == 0 else intervals[i - 1] + 1
                 end_idx = intervals[i]
@@ -79,7 +87,7 @@ class RealTimePlot3D:
 class MediaPipeHandLandmarkDetector:
     pass
 def mediapipe_hand_detection():
-    global g_hand_data, g_hand_data_normalized
+    global g_hand_data, g_hand_data_scaled, g_hand_data_normalized
     hand_data = np.zeros((21, 3))
 
     mp_drawing = mp.solutions.drawing_utils
@@ -135,6 +143,7 @@ def mediapipe_hand_detection():
     p_time = time.time()
 
     with mp_hands.Hands(
+        static_image_mode=False,
         min_detection_confidence=0.8,
         min_tracking_confidence=0.7) as hands:
       while True:
@@ -155,6 +164,9 @@ def mediapipe_hand_detection():
 
         # depth_frame_spatial_filter = rs.spatial_filter().process(depth_frame)
         # depth_frame_temporal_filter = rs.temporal_filter().process(depth_frame)
+
+        # decimated_queue = rs.decimation_filter(2)
+        # depth_frame = decimated_queue.process(depth_frame)
         depth_frame = rs.hole_filling_filter().process(depth_frame)
 
 
@@ -213,15 +225,20 @@ def mediapipe_hand_detection():
 
                 for ids, landmrk in enumerate(hand_landmarks.landmark):
                     cx, cy, cz = landmrk.x, landmrk.y, landmrk.z
+
                     g_hand_data[ids, 0] = cx
                     g_hand_data[ids, 1] = cy
                     g_hand_data[ids, 2] = cz
+
+                    g_hand_data_scaled[ids, 0] = cx * image_width
+                    g_hand_data_scaled[ids, 1] = cy * image_height
+                    g_hand_data_scaled[ids, 2] = cz * image_width
 
                 # 정규화
                 min_vals = np.min(g_hand_data, axis=0)
                 max_vals = np.max(g_hand_data, axis=0)
                 g_hand_data_normalized = (g_hand_data - min_vals) / (max_vals - min_vals)
-                g_hand_data_normalized[:, 2] = g_hand_data[:,2]
+                # g_hand_data_normalized[:, 2] = g_hand_data[:,2]
 
                 mp_drawing.draw_landmarks(
                     image,
@@ -232,18 +249,22 @@ def mediapipe_hand_detection():
                     )
 
             if results.multi_hand_world_landmarks:
-              for hand_world_landmarks in results.multi_hand_world_landmarks:
-                # Here is How to Get All the Coordinates
-                for ids, landmrk in enumerate(hand_world_landmarks.landmark):
-                    # print(ids, landmrk)
-                    cx, cy, cz = landmrk.x, landmrk.y, landmrk.z
-                    # print(f'{ids}: {cx}, {cy}, {cz}')
-                    g_hand_world_data[ids, 0] = cx
-                    g_hand_world_data[ids, 1] = cy
-                    g_hand_world_data[ids, 2] = cz
-        else:
-            # print("No Right Hand")
-            pass
+                for hand_world_landmarks in results.multi_hand_world_landmarks:
+                    # Here is How to Get All the Coordinates
+                    for ids, landmrk in enumerate(hand_world_landmarks.landmark):
+                        # print(ids, landmrk)
+                        cx, cy, cz = landmrk.x, landmrk.y, landmrk.z
+                        # print(f'{ids}: {cx}, {cy}, {cz}')
+                        g_hand_world_data[ids, 0] = cx
+                        g_hand_world_data[ids, 1] = cy
+                        g_hand_world_data[ids, 2] = cz
+
+                # for hand_world_landmarks in results.multi_hand_world_landmarks:
+                #     mp_drawing.plot_landmarks(
+                #         hand_world_landmarks, mp_hands.HAND_CONNECTIONS, azimuth=5)
+            else:
+                # print("No Right Hand")
+                pass
 
         c_time = time.time()
         fps = 1 / (c_time - p_time)
@@ -264,6 +285,10 @@ def mediapipe_hand_detection():
 
         pixel_x = int(g_hand_data[8, 0] * image_width)
         pixel_y = int(g_hand_data[8, 1] * image_height)
+
+        # pixel_x = int(g_hand_world_data[8, 0] * image_width)
+        # pixel_y = int(g_hand_world_data[8, 1] * image_height)
+
         # print(pixel_x, pixel_y)
         if pixel_x>0 and pixel_x<image_width and pixel_y>0 and pixel_y<image_height:
 
@@ -272,6 +297,7 @@ def mediapipe_hand_detection():
             filter_depth = filter_sensitivity*finger_depth_curr + (1-filter_sensitivity)*finger_depth_prev
             # xyz_world = rs.rs2_deproject_pixel_to_point(color_intrinsics, [pixel_x, pixel_y], filter_depth)
             xyz_world = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [pixel_x, pixel_y], filter_depth)
+
             x_world = xyz_world[0]
             y_world = xyz_world[1]
             z_world = xyz_world[2]

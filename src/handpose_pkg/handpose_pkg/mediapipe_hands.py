@@ -11,6 +11,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
 from functools import partial
 import threading
+from multiprocessing import Process
 # matplotlib.use('Agg')
 
 import json
@@ -22,6 +23,118 @@ from RealSense_Utilities.realsense_api.realsense_api import frame_to_np_array
 import queue
 
 queue = queue.Queue()
+g_hand_data = np.zeros((21, 3))
+g_canonical_points = np.zeros((21, 3))
+g_world_points = np.zeros((21, 3))
+
+class RealTimePlot3D:
+    def __init__(self, num_points=21):
+        self.num_points = num_points
+        self.data = np.random.randn(self.num_points, 3)
+        self.fig = plt.figure()
+        # self.fig2 = plt.figure()
+        self.ax = self.fig.add_subplot(221, projection='3d')    # visualization of hand pose
+        self.ax.set_xlabel('X Label')
+        self.ax.set_ylabel('Y Label')
+        self.ax.set_zlabel('Z Label')
+        self.ax.set_xlim(-0.1, 0.1)
+        self.ax.set_ylim(-0.1, 0.1)
+        self.ax.set_zlim(-0.1, 0.1)
+
+        self.ax2 = self.fig.add_subplot(222, projection='3d')    # visualization of hand pose
+        self.ax2.set_xlabel('X pixel')
+        self.ax2.set_ylabel('Y pixel')
+        self.ax2.set_zlabel('Z depth')
+
+        self.ax3 = self.fig.add_subplot(223, projection='3d')  # visualization of hand pose
+        self.ax3.set_xlabel('X pixel')
+        self.ax3.set_ylabel('Y pixel')
+        self.ax3.set_zlabel('Z depth')
+
+        self.ax4 = self.fig.add_subplot(224, projection='3d')  # visualization of hand pose
+        self.ax4.set_xlabel('X pixel')
+        self.ax4.set_ylabel('Y pixel')
+        self.ax4.set_zlabel('Z depth')
+
+        # self.ani = None
+        self.ani = FuncAnimation(self.fig, self.update_data, frames=1, interval=100)
+        self.scatter = self.ax.scatter(g_hand_data[:, 0], g_hand_data[:, 1], g_hand_data[:, 2])
+        self.scatter_canonical_points = self.ax.scatter(g_canonical_points[:, 0], g_canonical_points[:, 1], g_canonical_points[:, 2])
+        self.scatter_world_points = self.ax.scatter(g_world_points[:, 0], g_world_points[:, 1], g_world_points[:, 2])
+        self.update_thread = threading.Thread(target=self.update_data)
+        self.update_thread.daemon = True
+
+    def update_data(self, frames):
+
+        global g_hand_data, g_canonical_points, g_world_points
+        colors = ['black', 'blue', 'green', 'orange', 'red', 'black']
+        intervals = [4, 8, 12, 16, 20]
+
+        while True:
+
+            data = g_hand_data
+            data_c_p = g_canonical_points
+            data_w_p = g_world_points
+
+            # 현재 점 삭제
+            self.scatter.remove()
+            self.scatter_canonical_points.remove()
+            self.scatter_world_points.remove()
+            self.ax.cla()
+            self.ax2.cla()
+            self.ax3.cla()
+            self.ax4.cla()
+            self.ax.set_xlabel('X Label')
+            self.ax.set_ylabel('Y Label')
+            self.ax.set_zlabel('Z Label')
+            # self.ax.set_xlim(0, 500)
+            # self.ax.set_ylim(0, 500)
+            # self.ax.set_zlim(-100, 400)
+
+            max_xyz_c = np.max(data_c_p, axis=0)
+            min_xyz_c = np.min(data_c_p, axis=0)
+            max_xyz_w = np.max(data_w_p, axis=0)
+            min_xyz_w = np.min(data_w_p, axis=0)
+            th = 50
+            self.ax2.set_xlim(min_xyz_c[0] - th, max_xyz_c[0] + th)
+            self.ax2.set_ylim(min_xyz_c[1] - th, max_xyz_c[1] + th)
+            self.ax2.set_zlim(min_xyz_c[2] - th, max_xyz_c[2] + th)
+            self.ax3.set_xlim(min_xyz_c[0] - th, max_xyz_c[0] + th)
+            self.ax3.set_ylim(min_xyz_c[1] - th, max_xyz_c[1] + th)
+            self.ax3.set_zlim(min_xyz_c[2] - th, max_xyz_c[2] + th)
+            self.ax4.set_xlim(min_xyz_w[0] - th, max_xyz_w[0] + th)
+            self.ax4.set_ylim(min_xyz_w[1] - th, max_xyz_w[1] + th)
+            self.ax4.set_zlim(min_xyz_w[2] - th, max_xyz_w[2] + th)
+
+
+            # print(f'{data[8,0]} / {data[8,1]} / {data[8,2]}')
+            self.scatter = self.ax.scatter(data[:, 0], data[:, 1], data[:, 2], color='black', s=50, alpha=1)
+            self.scatter_canonical_points = self.ax2.scatter(data_c_p[:, 0], data_c_p[:, 1], data_c_p[:, 2], color='red', s=10, alpha=1)
+            self.scatter_world_points = self.ax2.scatter(data_w_p[:, 0], data_w_p[:, 1], data_w_p[:, 2], color='blue', s=10, alpha=1)
+            self.scatter_canonical_points = self.ax3.scatter(data_c_p[:, 0], data_c_p[:, 1], data_c_p[:, 2], color='red', s=10, alpha=1)
+            self.scatter_world_points = self.ax4.scatter(data_w_p[:, 0], data_w_p[:, 1], data_w_p[:, 2], color='blue', s=10, alpha=1)
+
+
+
+
+
+            # self.scatter_2 = self.ax2.scatter()
+            for i in range(len(intervals)):
+                start_idx = 0 if i == 0 else intervals[i - 1] + 1
+                end_idx = intervals[i]
+                self.ax.plot(data[start_idx:end_idx + 1, 0], data[start_idx:end_idx + 1, 1], data[start_idx:end_idx + 1, 2], color=colors[i])
+                self.ax2.plot(data_c_p[start_idx:end_idx + 1, 0], data_c_p[start_idx:end_idx + 1, 1], data_c_p[start_idx:end_idx + 1, 2], color=colors[i])
+                self.ax2.plot(data_w_p[start_idx:end_idx + 1, 0], data_w_p[start_idx:end_idx + 1, 1], data_w_p[start_idx:end_idx + 1, 2], color=colors[i])
+                self.ax3.plot(data_c_p[start_idx:end_idx + 1, 0], data_c_p[start_idx:end_idx + 1, 1], data_c_p[start_idx:end_idx + 1, 2], color=colors[i])
+                self.ax4.plot(data_w_p[start_idx:end_idx + 1, 0], data_w_p[start_idx:end_idx + 1, 1], data_w_p[start_idx:end_idx + 1, 2], color=colors[i])
+
+            return
+            # return self.scatter
+
+    def start(self):
+        # 데이터 업데이트 쓰레드 시작
+        self.update_thread.start()
+        self.ani = FuncAnimation(self.fig, self.update_data, frames=100, interval=30)
 
 
 class HandLandmarks():
@@ -57,6 +170,9 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         self.finger_depth_curr = 0
         self.filter_sensitivity = 0.3
 
+        self.image_width = 1280
+        self.image_height = 720
+
         self.color_image = None
         self.depth_image = None
         self.depth_image_prev = None
@@ -65,7 +181,7 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         self.pps = 0
 
     def hand_detection(self, color_frame, depth_frame, depth_intrinsic=None):
-
+        global g_hand_data, g_canonical_points, g_world_points
         ######################################################
         # Flip the image horizontally for a later selfie-view display, and convert
         # the BGR image to RGB.
@@ -89,9 +205,9 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         # pass by reference.
         self.color_image.flags.writeable = False
         results = self.hands.process(self.color_image)
-        image_height, image_width, _ = self.color_image.shape
+        self.image_height, self.image_width, _ = self.color_image.shape
         depth_image_height, depth_image_width = self.depth_image_filtered.shape
-        if image_height != depth_image_height or image_width != depth_image_width:
+        if self.image_height != depth_image_height or self.image_width != depth_image_width:
             print(f'[mediapipe_hands.py | Warning] It does not match a size (H x W) of color & depth frame')
         # Draw the hand annotations on the image.
         self.color_image.flags.writeable = True
@@ -122,10 +238,15 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
                     hand_data[idx, 0] = cx
                     hand_data[idx, 1] = cy
                     hand_data[idx, 2] = cz
+                    g_hand_data[idx, 0] = cx
+                    g_hand_data[idx, 1] = cy
+                    g_hand_data[idx, 2] = cz
+                    pixel_x = int(cx * self.image_width)
+                    pixel_y = int(cy * self.image_height)
 
-                    pixel_x = int(cx * image_width)
-                    pixel_y = int(cy * image_height)
-
+                canonical_points, world_points = self.compare_coordinate_canonical_with_world(hand_data)
+                g_canonical_points = canonical_points
+                g_world_points = world_points
                 self.hand_landmarks['landmarks'] = hand_data
 
                 world_landmarks = self.conversion_hand_keypoint_pixel_to_point(hand_data, top_point_n=None)
@@ -143,31 +264,34 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
                     # mp_drawing_styles.get_default_hand_connections_style()
                 )
 
-            # print(pixel_x, pixel_y)
-            # if pixel_x>0 and pixel_x<image_width and pixel_y>0 and pixel_y<image_height:
-            #     # Applying filter
-            #     finger_depth_curr = self.depth_image_filtered[pixel_y, pixel_x]
-            #     filter_depth = filter_sensitivity*finger_depth_curr + (1-filter_sensitivity)*finger_depth_prev
-            #     # camera_to_hand_vector = rs.rs2_deproject_pixel_to_point(color_intrinsics, [pixel_x, pixel_y], filter_depth)
-            #     camera_to_hand_vector = rs.rs2_deproject_pixel_to_point(self.depth_image_filtered, [pixel_x, pixel_y], filter_depth)
-            #     self.camera_to_hand_vector['x'] = camera_to_hand_vector[0]
-            #     self.camera_to_hand_vector['y'] = camera_to_hand_vector[1]
-            #     self.camera_to_hand_vector['z'] = camera_to_hand_vector[2]
-
-            #     finger_depth_prev = filter_depth
-            #     cv2.line(image, (int(image_width/2), int(image_height/2)), (int(image_width/2), int(image_height/2)), (255,0,0), 5)
-            #     cv2.putText(image, f"{filter_depth:.1f} mm",
-            #                 (pixel_x, pixel_y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
-            #     cv2.putText(image, f"{camera_to_hand_vector[0]:.1f}, {camera_to_hand_vector[1]:.1f}, {camera_to_hand_vector[2]:.1f} mm",
-            #                 (pixel_x, pixel_y+15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
-            #     cv2.line(depth_norm_image, (pixel_x, pixel_y), (pixel_x, pixel_y), (0, 255, 0), 5)
-            #     cv2.putText(depth_norm_image, f"{filter_depth:.1f} mm",
-            #                 (pixel_x, pixel_y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
-            #     cv2.putText(depth_norm_image, f"{camera_to_hand_vector[0]:.1f}, {camera_to_hand_vector[1]:.1f}, {camera_to_hand_vector[2]:.1f} mm",
-            #                 (pixel_x, pixel_y+15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
-
             e_time = time.time()
             self.pps = 1 / (e_time - s_time)
+
+    def compare_coordinate_canonical_with_world(self, hand_landmarks_array):
+        canonical_point = np.zeros((21, 3))
+        hand_landmarks_array = np.asarray(hand_landmarks_array)
+        w, h = self.image_width, self.image_height
+
+        # canonical_point[:, 0] = min(int(hand_landmarks_array[:, 0] * w), w - 1)
+        # canonical_point[:, 1] = min(int(hand_landmarks_array[:, 1] * h), h - 1)
+        # canonical_point[:, 2] = int(hand_landmarks_array[:, 2] * w)
+        canonical_point[:, 0] = [min(int(x * w), w - 1) for x in hand_landmarks_array[:, 0]]
+        canonical_point[:, 1] = [min(int(x * h), h - 1) for x in hand_landmarks_array[:, 1]]
+        canonical_point[:, 2] = [int(x * w) for x in hand_landmarks_array[:, 2]]
+        canonical_point = np.asarray(canonical_point, dtype=int)
+
+        world_point = np.zeros((21,3))
+        # depth = np.zeros((1, 21))
+        depth = self.depth_image[canonical_point[:, 1], canonical_point[:, 0]]
+        world_point[:, 0] = canonical_point[:, 0]
+        world_point[:, 1] = canonical_point[:, 1]
+        world_point[:, 2] = depth
+        world_point = np.asarray(world_point, dtype=int)
+        depth_avg = np.mean(world_point[:, 2])
+
+        canonical_point[:, 2] = canonical_point[:, 2] + depth_avg
+        return canonical_point, world_point
+        pass
 
     def get_hand_keypoint_pixel_xy(self):
         pass
@@ -188,6 +312,7 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
 
     def conversion_hand_keypoint_pixel_to_point(self, keypoints_array, top_point_n=None):
         """Algorithm for annotating pixel.
+        -- Not Used --
         Select 3(or more, optional) points closest to the camera.
         And, calculate of scale of x,y and z (distance_pixel : distance_world)
         Finally, obtain all 21 x,y and z dimension values of keypoints on real world
@@ -310,6 +435,7 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
 
     def get_scales_xyz_coordinate_to_world(self, selected_keypoint_arr, selected_keypoint_world_arr, sz_type='sx'):
         """Obtain scales of x,y and z
+        -- Not Used --
         scale = abs(real_distance / point_distance)
         It is the average of values that have several points and are selected as a combination of two points.
         (nC2)
@@ -354,14 +480,16 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
     #     finally:
     #         pass
 
-    def rs_init(self):
+    def rs_init(self, fps=30):
         # Realsense 카메라 객체 생성
         self.pipeline = rs.pipeline()
         self.config = rs.config()
         # config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
         # config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
-        self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-        self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+        width = self.image_width
+        height = self.image_height
+        self.config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
+        self.config.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
 
         # 카메라 시작
         self.profile = self.pipeline.start(self.config)
@@ -396,7 +524,11 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         align_frames = frames
         color_frame = align_frames.get_color_frame()
         depth_frame = align_frames.get_depth_frame()
-        depth_frame = rs.hole_filling_filter().process(depth_frame)
+        # depth_frame = rs.depth_to_disparity().process(depth_frame)
+        depth_frame = rs.spatial_filter().process(depth_frame)
+        depth_frame = rs.temporal_filter().process(depth_frame)
+        # depth_frame = rs.disparity_to_depth().process(depth_frame)
+        # depth_frame = rs.hole_filling_filter().process(depth_frame)
 
         if not depth_frame or not color_frame:
             return depth_frame, color_frame
@@ -407,91 +539,83 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         # return
         return self.color_image, self.depth_image
 
+    def realsense_demo(self):
+        global g_hand_data
+        try:
+            image_width = self.image_width
+            image_height = self.image_height
+            # mphand = MediaPipeHandLandmarkDetector()
+            self.rs_init()
 
-def main(args=None):
-    try:
-        mphand = MediaPipeHandLandmarkDetector()
-        mphand.rs_init()
-
-        while True:
-            try:
-                image_color, image_depth = mphand.get_frames()
+            while True:
+                image_color, image_depth = self.get_frames()
 
                 # if not image_color or not image_depth:
                 #     continue
 
-                mphand.hand_detection(image_color, image_depth, mphand.depth_intrinsics)
+                self.hand_detection(image_color, image_depth, self.depth_intrinsics)
 
-                # cv2.putText(image, f"FPS: {int(fps)}", (20, 20), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 255), 1)
-
-                # pixel_x = int(g_hand_data[8, 0] * image_width)
-                # pixel_y = int(g_hand_data[8, 1] * image_height)
-                # # print(pixel_x, pixel_y)
-                # if pixel_x > 0 and pixel_x < image_width and pixel_y > 0 and pixel_y < image_height:
-                #
-                #     # Applying filter
-                #     finger_depth_curr = depth_image[pixel_y, pixel_x]
-                #     filter_depth = filter_sensitivity * finger_depth_curr + (1 - filter_sensitivity) * finger_depth_prev
-                #     # camera_to_hand_vector = rs.rs2_deproject_pixel_to_point(color_intrinsics, [pixel_x, pixel_y], filter_depth)
-                #     camera_to_hand_vector = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [pixel_x, pixel_y],
-                #                                                             filter_depth)
-                #     self.camera_to_hand_vector['x'] = camera_to_hand_vector[0]
-                #     self.camera_to_hand_vector['y'] = camera_to_hand_vector[1]
-                #     self.camera_to_hand_vector['z'] = camera_to_hand_vector[2]
-                #
-                #     if hand_label == "Right":
-                #         self.publishall()
-                #     else:
-                #         msg = Vector3()
-                #         msg.x = 0.0
-                #         msg.y = 0.0
-                #         msg.z = 300.0
-                #         self.handpose_publisher.publish(msg)
-
-                image_width = 640
-                image_height = 480
-
-                index_finger_tip_image = mphand.hand_landmarks['landmarks']
+                index_finger_tip_image = self.hand_landmarks['landmarks']
+                if index_finger_tip_image is None:
+                    continue
                 xyz_idx = index_finger_tip_image[8]
-                index_finger_tip = mphand.hand_landmarks['world_landmarks']
+                index_finger_tip = self.hand_landmarks['world_landmarks']
                 x = min(int(xyz_idx[0] * image_width), image_width - 1)  # prevent the index overflow
                 y = min(int(xyz_idx[1] * image_height), image_height - 1)  # prevent the index overflow
                 # if x <= 0 or x >= w or y <= 0 or y >= h:
                 #     ''' out of index '''
                 #     return
-                z = mphand.depth_image_filtered[y, x]
+                z = self.depth_image_filtered[y, x]
                 z2 = index_finger_tip[8][2]
 
                 finger_depth = z
-                cv2.line(mphand.color_image, (int(image_width / 2), int(image_height / 2)),
+                cv2.line(self.color_image, (int(image_width / 2), int(image_height / 2)),
                          (int(image_width / 2), int(image_height / 2)), (255, 0, 0), 5)
-                cv2.putText(mphand.color_image, f"(basic: {finger_depth:.1f} mm",
+                cv2.putText(self.color_image, f"(basic: {finger_depth:.1f} mm",
                             (x, y - 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
-                cv2.putText(mphand.color_image, f"(scale: {z2:.1f}) mm",
+                cv2.putText(self.color_image, f"(scale: {z2:.1f}) mm",
                             (x, y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
-                cv2.putText(mphand.color_image,
+                cv2.putText(self.color_image,
                             f"{x:.1f}, {y:.1f}, {z:.1f} mm",
                             (x, y + 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
-                cv2.line(mphand.depth_image_filtered, (x, y), (x, y), (0, 255, 0), 5)
-                cv2.putText(mphand.depth_image_filtered, f"{finger_depth:.1f} mm",
+                cv2.line(self.depth_image_filtered, (x, y), (x, y), (0, 255, 0), 5)
+                cv2.putText(self.depth_image_filtered, f"{finger_depth:.1f} mm",
                             (x, y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
-                cv2.putText(mphand.depth_image_filtered,
+                cv2.putText(self.depth_image_filtered,
                             f"{x:.1f}, {y:.1f}, {z:.1f} mm",
                             (x, y + 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
 
-                cv2.imshow('MediaPipe Hands', mphand.color_image)
-                cv2.imshow('depth image', mphand.depth_image_filtered)
+                cv2.imshow('MediaPipe Hands', self.color_image)
+
+                depth_show_img = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image_filtered, alpha=0.3), cv2.COLORMAP_JET)
+                cv2.imshow('depth image', depth_show_img)
 
                 if cv2.waitKey(5) & 0xFF == 27:
                     break
-            except KeyboardInterrupt:
-                print(f'Keyboard Interrupt (SIGINT)')
+        except KeyboardInterrupt:
+            print(f'Keyboard Interrupt (SIGINT)')
+        finally:
+            pass
 
-    finally:
-        pass
+def main():
+    HLD = MediaPipeHandLandmarkDetector()
+    thread_mediapipe_hand = threading.Thread(target=HLD.realsense_demo)
+    thread_mediapipe_hand.daemon = True
+    thread_mediapipe_hand.start()
 
+    print('RealTimePlot3D class is update...')
+
+    real_time_plot = RealTimePlot3D()
+    real_time_plot.start()
+
+    print('show start')
+    plt.show()
+    print('show end')
+
+    # t = Process(target=HLD.realsense_demo(), args=(10,))
+    # t.start()
+    # t.join()
 
 if __name__ == '__main__':
     main()
-
 
