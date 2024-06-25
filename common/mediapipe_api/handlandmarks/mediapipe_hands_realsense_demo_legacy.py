@@ -7,19 +7,15 @@ import pyrealsense2 as rs
 import time
 import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use('TkAgg')
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
+
 from functools import partial
 import threading
 from multiprocessing import Process
 # matplotlib.use('Agg')
-
 import json
-
-from RealSense_Utilities.realsense_api.realsense_api import RealSenseCamera
-from RealSense_Utilities.realsense_api.realsense_api import find_realsense
-from RealSense_Utilities.realsense_api.realsense_api import frame_to_np_array
-
 import queue
 
 queue = queue.Queue()
@@ -189,10 +185,10 @@ class RealTimePlot3D:
 
                 self.ax3.plot(data_r_p[start_idx:end_idx + 1, 0], data_r_p[start_idx:end_idx + 1, 1], data_r_p[start_idx:end_idx + 1, 2], color='purple')
                 # 벡터 그리기
-                self.ax3.quiver(g_palm_center[0], g_palm_center[1], g_palm_center[2] , g_palm_normal_vector[0], g_palm_normal_vector[1], g_palm_normal_vector[2], color='r', length=150, normalize=False)
+                self.ax3.quiver(g_palm_center[0], g_palm_center[1], g_palm_center[2] , g_palm_normal_vector[0], g_palm_normal_vector[1], g_palm_normal_vector[2], color='black', length=150, normalize=False)
 
                 self.ax4.plot(data_c_p[start_idx:end_idx + 1, 0], data_c_p[start_idx:end_idx + 1, 1], data_c_p[start_idx:end_idx + 1, 2], color='red')
-                self.ax4.quiver(g_palm_center_cano[0], g_palm_center_cano[1], g_palm_center_cano[2] , g_palm_normal_vector_cano[0], g_palm_normal_vector_cano[1], g_palm_normal_vector_cano[2], color='r', length=150, normalize=False)
+                self.ax4.quiver(g_palm_center_cano[0], g_palm_center_cano[1], g_palm_center_cano[2] , g_palm_normal_vector_cano[0], g_palm_normal_vector_cano[1], g_palm_normal_vector_cano[2], color='black', length=150, normalize=False)
 
                 self.ax5.plot(data_w_p[start_idx:end_idx + 1, 0], data_w_p[start_idx:end_idx + 1, 1], data_w_p[start_idx:end_idx + 1, 2], color='blue')
 
@@ -210,7 +206,7 @@ class RealTimePlot3D:
 
 class HandLandmarks():
     def __init__(self):
-        self.keypoints = json.load(open("./handlandmark_keypoints.json"))
+        self.keypoints = json.load(open("handlandmark_keypoints.json"))
         self.hand_landmarks = {}  # tuple
         self.hand_landmarks['index'] = None
         self.hand_landmarks['score'] = None
@@ -256,7 +252,8 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         self.color_image = None
         self.depth_image = None
         self.depth_image_prev = None
-        self.depth_image_for_drawing = None
+        self.depth_colormap = None
+        self.blended_image = None
         self.start_flag = False
 
         self.hand_thickness = 10 # mm
@@ -363,20 +360,27 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
                     # mp_drawing_styles.get_default_hand_connections_style()
                 )
 
-                # self.depth_image_for_drawing = np.zeros((self.image_height, self.image_width, 3), dtype=np.uint16)
-                # self.depth_image_for_drawing[:, :, 0] = self.depth_image_filtered
-                # self.depth_image_for_drawing = cv2.cvtColor(self.depth_image_for_drawing, cv2.COLOR_RGB2BGR)
+                # self.depth_colormap = np.zeros((self.image_height, self.image_width, 3), dtype=np.uint16)
+                # self.depth_colormap[:, :, 0] = self.depth_image_filtered
+                # self.depth_colormap = cv2.cvtColor(self.depth_colormap, cv2.COLOR_RGB2BGR)
 
-                self.depth_image_for_drawing = self.depth_image_filtered
-                self.depth_image_for_drawing = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image_for_drawing, alpha=0.3), cv2.COLORMAP_JET)
+                self.depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image_filtered, alpha=0.3), cv2.COLORMAP_JET)
+                # self.depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_colormap, alpha=0.3), cv2.COLORMAP_JET)
 
-                self.mp_drawing.draw_landmarks(
-                    self.depth_image_for_drawing,
-                    hand_landmarks,
-                    self.mp_hands.HAND_CONNECTIONS,
-                    # mp_drawing_styles.get_default_hand_landmarks_style(),
-                    # mp_drawing_styles.get_default_hand_connections_style()
-                )
+                # 이미지 블렌딩
+                alpha = 0.3  # 컬러 이미지의 투명도
+                beta = 1 - alpha  # 깊이 이미지의 투명도
+                gamma = 0  # 추가적인 밝기 조절
+                self.blended_image = cv2.addWeighted(self.color_image, alpha, self.depth_colormap, beta, gamma)
+
+
+                # self.mp_drawing.draw_landmarks(
+                #     self.depth_colormap,
+                #     hand_landmarks,
+                #     self.mp_hands.HAND_CONNECTIONS,
+                #     # mp_drawing_styles.get_default_hand_landmarks_style(),
+                #     # mp_drawing_styles.get_default_hand_connections_style()
+                # )
 
             e_time = time.time()
             self.pps = 1 / (e_time - s_time)
@@ -398,7 +402,7 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         world_point_iqr = np.zeros((21, 3))
 
         # depth = np.zeros((1, 21))
-        depth = self.depth_image[canonical_point[:, 1], canonical_point[:, 0]]
+        depth = self.depth_image_filtered[canonical_point[:, 1], canonical_point[:, 0]]
         world_point[:, 0] = canonical_point[:, 0]
         world_point[:, 1] = canonical_point[:, 1]
         world_point[:, 2] = depth
@@ -406,7 +410,8 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         world_point_iqr[:, 1] = canonical_point[:, 1]
         world_point_iqr[:, 2] = self.replace_outliers_iqr_as_mean(depth, q1_rate=25, q3_rate=75, alpha=0)
 
-        world_point = np.asarray(world_point, dtype=int)
+        # world_point = np.asarray(world_point, dtype=int)
+        world_point = np.asarray(world_point)
 
         # depth_avg = np.mean(world_point[:, 2])
         depth_avg = np.mean(world_point_iqr[:, 2])
@@ -702,8 +707,8 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
         # config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
         width = self.image_width
         height = self.image_height
-        self.config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
         self.config.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
+        self.config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
 
         # 카메라 시작
         self.profile = self.pipeline.start(self.config)
@@ -733,26 +738,38 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
 
     def get_frames(self):
         frames = self.pipeline.wait_for_frames()
-        align_frames = frames
-        # align_frames = self.align.process(frames)
 
-        depth_to_disparity_transform = rs.disparity_transform(True)  # True for depth to disparity
-        align_frames = depth_to_disparity_transform.process(align_frames)
+        # Align the depth frame to color frame
+        align = rs.align(rs.stream.color)
+        frames = align.process(frames)
 
-        align_frames = rs.spatial_filter().process(align_frames)
-        align_frames = rs.temporal_filter().process(align_frames)
+        # Get aligned frames
+        aligned_depth_frame = frames.get_depth_frame()
+        color_frame = frames.get_color_frame()
 
-        disparity_to_depth_transform = rs.disparity_transform(False)
-        align_frames = disparity_to_depth_transform.process(align_frames).as_frameset()
+        # Validate that both frames are valid
+        if not aligned_depth_frame or not color_frame:
+            raise RuntimeError("Could not acquire aligned frames.")
 
-        color_frame = align_frames.get_color_frame()
-        depth_frame = align_frames.get_depth_frame()
-
-        if not depth_frame or not color_frame:
-            return depth_frame, color_frame
-
+        '''
+        TODO depth scale - D400: 0 L515: /4
+        '''
+        # self.depth_image = np.asanyarray(aligned_depth_frame.get_data()) / 4
+        self.depth_image = np.asanyarray(aligned_depth_frame.get_data())
         self.color_image = np.asanyarray(color_frame.get_data())
-        self.depth_image = np.asanyarray(depth_frame.get_data())
+
+        # self.color_image = np.asanyarray(color_frame.get_data())
+        # self.depth_image = np.asanyarray(depth_frame.get_data())
+
+        # depth_to_disparity_transform = rs.disparity_transform(True)  # True for depth to disparity
+        # align_frames = depth_to_disparity_transform.process(align_frames)
+        #
+        # align_frames = rs.spatial_filter().process(align_frames)
+        # align_frames = rs.temporal_filter().process(align_frames)
+        #
+        # disparity_to_depth_transform = rs.disparity_transform(False)
+        # align_frames = disparity_to_depth_transform.process(align_frames).as_frameset()
+
 
         # return
         return self.color_image, self.depth_image
@@ -767,9 +784,6 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
 
             while True:
                 image_color, image_depth = self.get_frames()
-
-                # if not image_color or not image_depth:
-                #     continue
 
                 self.hand_detection(image_color, image_depth, self.depth_intrinsics)
 
@@ -788,32 +802,50 @@ class MediaPipeHandLandmarkDetector(HandLandmarks):
                 z2 = index_finger_tip_world[8][2]
 
                 finger_depth = z
+
+                try:
+                    m_f = self.get_hand_keypoint_pixel_xyz(hand_index=0, keypoint='middle_finger_tip', coord='canonical')
+                    m_f_z = self.depth_image_filtered[m_f[1], m_f[0]]
+                    cv2.putText(self.color_image, f"{m_f_z:.1f}", (m_f[0], m_f[1] - 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
+                    m_f = self.get_hand_keypoint_pixel_xyz(hand_index=0, keypoint='ring_finger_tip', coord='canonical')
+                    m_f_z = self.depth_image_filtered[m_f[1], m_f[0]]
+                    cv2.putText(self.color_image, f"{m_f_z:.1f}", (m_f[0], m_f[1] - 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
+                    m_f = self.get_hand_keypoint_pixel_xyz(hand_index=0, keypoint='pinky_tip', coord='canonical')
+                    m_f_z = self.depth_image_filtered[m_f[1], m_f[0]]
+                    cv2.putText(self.color_image, f"{m_f_z:.1f}", (m_f[0], m_f[1] - 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
+                except Exception as e:
+                    continue
+                    pass
+
+
                 cv2.line(self.color_image, (int(image_width / 2), int(image_height / 2)),
                          (int(image_width / 2), int(image_height / 2)), (255, 0, 0), 5)
-                cv2.putText(self.color_image, f"(basic: {finger_depth:.1f} mm",
+                cv2.putText(self.color_image, f"{finger_depth:.1f} mm",
                             (x, y - 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
-                cv2.putText(self.color_image, f"(scale: {z2:.1f}) mm",
-                            (x, y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
-                cv2.putText(self.color_image,
-                            f"{x:.1f}, {y:.1f}, {z:.1f} mm",
-                            (x, y + 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
+                # cv2.putText(self.color_image, f"(scale: {z2:.1f}) mm",
+                #             (x, y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
+                # cv2.putText(self.color_image,
+                #             f"{x:.1f}, {y:.1f}, {z:.1f} mm",
+                #             (x, y + 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 1)
                 cv2.line(self.depth_image_filtered, (x, y), (x, y), (0, 255, 0), 5)
                 cv2.putText(self.depth_image_filtered, f"{finger_depth:.1f} mm",
                             (x, y), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
-                cv2.putText(self.depth_image_filtered,
-                            f"{x:.1f}, {y:.1f}, {z:.1f} mm",
-                            (x, y + 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+                # cv2.putText(self.depth_image_filtered,
+                #             f"{x:.1f}, {y:.1f}, {z:.1f} mm",
+                #             (x, y + 15), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+
+
+
                 
-                
-                if self.color_image is None or self.depth_image_for_drawing is None:
-                    continue
+                # if self.color_image is None or self.depth_colormap is None:
+                #     continue
 
                 cv2.imshow('MediaPipe Hands', self.color_image)
 
-                depth_show_img = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image_filtered, alpha=0.3), cv2.COLORMAP_JET)
                 # cv2.imshow('depth image', depth_show_img)
                 
-                cv2.imshow('depth image2', self.depth_image_for_drawing)
+                cv2.imshow('depth image2', self.depth_colormap)
+                cv2.imshow('depth image3', self.blended_image)
 
 
 
